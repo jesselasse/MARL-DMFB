@@ -400,15 +400,17 @@ class RoutingTaskManager:
                 obs_i[0][y][x] = idx+1
         # get current droplet's goal layer 1
         # # 投影过来 （50 for 4 drop)
-        # x = np.clip(self.droplets[agent_i].des_x - origin[0], 0, fov-1)
-        # y = np.clip(self.droplets[agent_i].des_y - origin[1], 0, fov-1)
-        # obs_i[1][y][x] = agent_i+1
+        if self.n_droplets < 10:
+            x = np.clip(self.droplets[agent_i].des_x - origin[0], 0, fov-1)
+            y = np.clip(self.droplets[agent_i].des_y - origin[1], 0, fov-1)
+            obs_i[1][y][x] = agent_i+1
         ######
         # 不投影 (10 drop)
-        x = self.droplets[agent_i].des_x - origin[0]
-        y = self.droplets[agent_i].des_y - origin[1]
-        if (0 <= x < fov) and (0 <= y < fov):
-            obs_i[1][y][x] = agent_i+1
+        else:
+            x = self.droplets[agent_i].des_x - origin[0]
+            y = self.droplets[agent_i].des_y - origin[1]
+            if (0 <= x < fov) and (0 <= y < fov):
+                obs_i[1][y][x] = agent_i+1
         ###333333
         # get other's Goal layer 2
         for idx, d in enumerate(self.droplets):
