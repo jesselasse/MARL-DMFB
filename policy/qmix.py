@@ -12,8 +12,7 @@ class QMIX:
         self.n_actions = args.n_actions
         self.n_agents = args.n_agents
         self.state_shape = args.state_shape
-        self.obs_shape = args.obs_shape
-        input_shape = self.obs_shape
+        input_shape = args.obs_shape[-1]
         # 根据参数决定RNN的输入维度
         if args.last_action:
             input_shape += self.n_actions
