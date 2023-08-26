@@ -8,7 +8,7 @@ class Agents:
     def __init__(self, args):
         self.n_actions = args.n_actions
         self.n_agents = args.n_agents
-        self.obs_shape = args.obs_shape
+        # self.obs_shape = args.obs_shape
         if args.alg == 'vdn':
             from policy.vdn import VDN
             self.policy = VDN(args)
@@ -24,12 +24,12 @@ class Agents:
         avail_actions_ind = np.nonzero(avail_actions)[0]  # index of actions which can be choose
 
         # transform agent_num to onehot vector
-        agent_id = np.zeros(self.n_agents)
-        agent_id[agent_num] = 1.
+        agent_id = np.zeros(self.n_agents-1)
+        agent_id[0] = 1.
         if self.args.last_action:
             inputs = np.hstack((inputs, last_action))
-        if self.args.reuse_network:
-            inputs = np.hstack((inputs, agent_id))
+        # if self.args.reuse_network:
+        #     inputs = np.hstack((inputs, agent_id))
         hidden_state = self.policy.eval_hidden[:, agent_num, :]
         inputs = torch.tensor(inputs, dtype=torch.float32).unsqueeze(0)
         avail_actions = torch.tensor(avail_actions, dtype=torch.float32).unsqueeze(0)
@@ -41,7 +41,7 @@ class Agents:
         q_value, self.policy.eval_hidden[:, agent_num, :] = self.policy.eval_rnn(inputs, hidden_state)
         # choose action from q value
         q_value[avail_actions == 0.0] = - float("inf")
-        if np.random.uniform() < epsilon:
+        if np.random.uniform() < epsilon and not evaluate: #jc改
             action = np.random.choice(avail_actions_ind)  # action是一个整数
         else:
             action = torch.argmax(q_value)
