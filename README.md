@@ -9,8 +9,8 @@ the training data will be saved in "data-dmfb/TrainResult/vdn/fov9/10by10-4d0b/"
 the trained model will be saved in "data-dmfb/model/vdn/fov9/4d0b/
 
 ## Evaluate model in health mode
-python main.py --evaluate --load_model --chip_size=50 --drop_num=4 --evaluate_epoch=100
 python evaluate.py dmfb --drop_num=4 --chip_size=20 --evaluate_task=100 --show
+
 This will evaluate the performance of the model: "data-dmfb/model/vdn/fov9/4d0b/rnn_net_params.pkl" and "data-dmfb/model/vdn/fov9/4d0b/vdn_net_params.pkl"
 
 ## Evaluate model with electrodes degrade
