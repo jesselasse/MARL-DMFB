@@ -27,6 +27,8 @@ class Runner:
             os.makedirs(self.save_path)
 
     def run(self, num):
+        # 进行n_step次训练，其中每evaluation cycle个step进行一次评估；每运行n_episode把数据保存下来训练网络，更新 train_steps次参数
+
         time_steps, train_steps, evaluate_steps = 0, 0, -1
         # n_step 每一次完整实验的总steps.\
         zqq_count = 0
@@ -35,7 +37,7 @@ class Runner:
                 print('Run {}, time_steps {}'.format(num, time_steps))
             zqq_count += 1
             if time_steps // self.args.evaluate_cycle > evaluate_steps:
-                average_episode_reward, average_episode_steps, average_episode_constraints, success_rate = self.evaluate()
+                average_episode_reward, average_episode_steps, average_episode_constraints, success_rate = self.evaluate(self.args.evaluate_epoch)
                 self.episode_rewards.append(average_episode_reward)
                 self.episode_steps.append(average_episode_steps)
                 self.episode_constraints.append(average_episode_constraints)
@@ -48,7 +50,7 @@ class Runner:
             # 收集self.args.n_episodes个episodes
             # n_eisode 'the number of episodes before once training'
             for episode_idx in range(self.args.n_episodes):
-                episode, _, steps, _, _ = self.rolloutWorker.generate_episode(
+                _, steps, _, _, episode = self.rolloutWorker.generate_episode(
                     episode_idx)
                 episodes.append(episode)
                 time_steps += steps
@@ -65,7 +67,7 @@ class Runner:
                     min(self.buffer.current_size, self.args.batch_size))
                 self.agents.train(mini_batch, train_steps)
                 train_steps += 1
-        average_episode_reward, average_episode_steps, average_episode_constraints, success_rate = self.evaluate()
+        average_episode_reward, average_episode_steps, average_episode_constraints, success_rate = self.evaluate(self.args.evaluate_epoch)
         self.episode_rewards.append(average_episode_reward)
         self.episode_steps.append(average_episode_steps)
         self.episode_constraints.append(average_episode_constraints)
@@ -74,22 +76,23 @@ class Runner:
         self.train_data_save(num)
         self.agents.policy.save_final_model(num)
 
-    def evaluate(self):
+    def evaluate(self, evaluate_epoch):
+        # 运行evaluate epoch个episode, 输出指标的平均值
         episode_rewards = 0
         episode_steps = 0
         episode_constraints = 0
         total_success = 0
         # 2022.6.1 jc修改平均步长计算，不成功按最大长度算
-        for epoch in range(self.args.evaluate_epoch):
+        for epoch in range(evaluate_epoch):
             # for epoch in range(2)
             # 2021.6.7 添加每个epoch的总steps
-            _, episode_reward, total_step, total_constraints, success = self.rolloutWorker.generate_episode(epoch,
+            episode_reward, total_step, total_constraints, success, _ = self.rolloutWorker.generate_episode(epoch,
                                                                                                             evaluate=True)
             episode_rewards += episode_reward
             episode_steps += total_step  # 计算所有的步长
             episode_constraints += total_constraints
             total_success += success
-        return episode_rewards / self.args.evaluate_epoch, episode_steps / self.args.evaluate_epoch, episode_constraints / self.args.evaluate_epoch, total_success / self.args.evaluate_epoch
+        return episode_rewards / evaluate_epoch, episode_steps / evaluate_epoch, episode_constraints / evaluate_epoch, total_success / evaluate_epoch
 
     def plt(self, num):
         import matplotlib.pylab as pylab
