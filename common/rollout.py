@@ -2,129 +2,149 @@ import numpy as np
 import torch
 from torch.distributions import one_hot_categorical
 import time
+import collections
 
 
-class RolloutWorker:
-    def __init__(self, env, agents, args):
-        self.env = env
+Experience=collections.namedtuple('Experience', field_names=['o','u','r','avail_u', 'o_next', 'avail_u_next', 'u_onehot', 'terminated','padded'])
+
+class Evaluator:
+    # 评估使用的类
+    def __init__(self, env, agents, episode_limit):
         self.agents = agents
-        self.episode_limit = args.episode_limit
-        self.n_actions = args.n_actions
-        self.n_agents = args.n_agents
-        self.obs_shape = args.obs_shape
-        self.args = args
-        self.epsilon = args.epsilon
-        self.anneal_epsilon = args.anneal_epsilon
-        self.min_epsilon = args.min_epsilon
-        print('Init RolloutWorker')
+        self.env = env
+        self.n_agents=agents.n_agents
+        self.n_actions=agents.n_actions
+        self.episode_limit=episode_limit
 
-    def generate_episode(self, episode_num=None, evaluate=False):
-        if self.args.replay_dir != '' and evaluate and episode_num == 0:  # prepare for save replay of evaluation
-            self.env.close()
-        o, u, r, s, avail_u, u_onehot, terminate, padded = [], [], [], [], [], [], [], []
-        self.env.reset()
-        if self.args.show:
-            self.env.render()
-            time.sleep(0.05)
+    def one_step(self, obs, last_action, epsilon=0):
+        actions, avail_actions, actions_onehot = [], [], []
+        for agent_id in range(self.n_agents):
+            avail_action = [1] * self.n_actions
+            action = self.agents.choose_action(
+                obs[agent_id], last_action[agent_id], agent_id, avail_action, epsilon)
+            # generate onehot vector of th action
+            action_onehot = np.zeros(self.n_actions)
+            action_onehot[action] = 1
+            actions.append(int(action))
+            actions_onehot.append(action_onehot)
+            avail_actions.append(avail_action)
+            last_action[agent_id] = action_onehot
+        new_obs, r, terminated, info = self.env.step(actions)
+        r = np.sum([r[agent] for agent in self.env.agents]) / len(r)
+        terminated = np.all([terminated[agent]
+                             for agent in self.env.agents])
+        experience = Experience(obs, np.reshape(actions, [self.n_agents, 1]), [r], avail_actions, new_obs,
+                                avail_actions, actions_onehot, [terminated], [0.])
+        self.env.render()
+        return experience, info, last_action
+
+    def _generate_episode(self): #evaluate
+        # if self.args.replay_dir != '' and episode_num == 0:  # prepare for save replay of evaluation
+        #     self.env.close()
+        obs=self.env.reset() # 会更新degrade
         terminated = False
         step = 0
-        constraints = 0
         success = 0
-        episode_reward = 0  # cumulative rewards
-        last_action = np.zeros((self.args.n_agents, self.args.n_actions))
+        reward = 0  # cumulative rewards
+        constraints = 0
+        last_action = np.zeros((self.n_agents, self.n_actions))
+        self.agents.policy.init_hidden(1)
+        while not terminated and step < self.episode_limit:
+            experience, info, last_action= self.one_step(obs,last_action)
+            reward += experience.r[0]
+            constraints += info['constraints']
+            success += info['success']
+            obs = experience.o_next
+            terminated=experience.terminated[0]
+            step += 1
+        if not success:
+            step = self.episode_limit
+
+        # if episode_num == self.args.evaluate_epoch - 1 and self.args.replay_dir != '':
+        #     # self.env.save_replay()
+        #     self.env.close()
+
+        return reward, step, constraints, success
+
+    def evaluate(self, task_num):
+        # 运行task_num个episode, 输出指标的平均值
+        episode_rewards = 0
+        episode_steps = 0
+        episode_constraints = 0
+        total_success = 0
+        # 2022.6.1 jc修改平均步长计算，不成功按最大长度算
+        for epoch in range(task_num):
+            # for epoch in range(2)
+            # 2021.6.7 添加每个epoch的总steps
+            episode_reward, total_step, total_constraints, success = self._generate_episode()
+            episode_rewards += episode_reward
+            episode_steps += total_step  # 计算所有的步长
+            episode_constraints += total_constraints
+            total_success += success
+        self.env.close()
+        return episode_rewards / task_num, episode_steps / task_num, episode_constraints / task_num, total_success / task_num
+
+
+
+class RolloutWorker(Evaluator):
+    # 训练时用的类，会将每一步信息保存下来
+    def __init__(self, env, agents, args):
+        super().__init__(env, agents, args.episode_limit)
+        self.n_actions = args.n_actions
+        self.obs_shape = args.obs_shape[-1]
+        self.epsilon_anneal_scale = args.epsilon_anneal_scale
+        self.epsilon = args.epsilon
+        self.min_epsilon = args.min_epsilon
+        self.anneal_epsilon = (args.epsilon - args.min_epsilon) / args.anneal_steps
+        print('Init RolloutWorker')
+
+    def generate_episode(self):
+        episode=collections.defaultdict(list)
+        obs=self.env.reset() # 会更新degrade
+        terminated = False
+        step = 0
+        success = 0
+        reward = 0  # cumulative rewards
+        constraints = 0
+        last_action = np.zeros((self.n_agents, self.n_actions))
         self.agents.policy.init_hidden(1)
 
         # epsilon
-        epsilon = 0 if evaluate else self.epsilon
-        if self.args.epsilon_anneal_scale == 'episode':
+        epsilon = self.epsilon
+        if self.epsilon_anneal_scale == 'episode':
             epsilon = epsilon - self.anneal_epsilon if epsilon > self.min_epsilon else epsilon
 
         while not terminated and step < self.episode_limit:
-            obs = self.env.getObs()
-            obs = [obs[agent].reshape(-1) for agent in self.env.agents]
-            actions, avail_actions, actions_onehot = [], [], []
-            for agent_id in range(self.n_agents):
-                avail_action = [1] * 5
-                action = self.agents.choose_action(obs[agent_id], last_action[agent_id], agent_id, avail_action,
-                                                   epsilon, evaluate)
-                # generate onehot vector of th action
-                action_onehot = np.zeros(self.args.n_actions)
-                action_onehot[action] = 1
-                actions.append(int(action))
-                actions_onehot.append(action_onehot)
-                avail_actions.append(avail_action)
-                last_action[agent_id] = action_onehot
-            _, reward, terminated, info = self.env.step(actions)
+            experience, info, last_action= self.one_step(obs,last_action, epsilon)
+            for i in range(experience.__len__()):
+                episode[experience._fields[i]].append(experience[i])
+            reward += experience.r[0]
             constraints += info['constraints']
             success += info['success']
-            reward = np.sum([reward[agent]
-                            for agent in self.env.agents]) / len(reward)
-            terminated = np.all([terminated[agent]
-                                for agent in self.env.agents])
-            if self.args.show:
-                self.env.render()
-                time.sleep(0.05)
-            o.append(obs)
-            u.append(np.reshape(actions, [self.n_agents, 1]))
-            u_onehot.append(actions_onehot)
-            avail_u.append(avail_actions)
-            r.append([reward])
-            terminate.append([terminated])
-            padded.append([0.])
-            episode_reward += reward
-            step += 1
-            if self.args.epsilon_anneal_scale == 'step':
+            obs = experience.o_next
+            terminated = experience.terminated[0]
+            if self.epsilon_anneal_scale == 'step':
                 epsilon = epsilon - self.anneal_epsilon if epsilon > self.min_epsilon else epsilon
-        # last obs
-        obs = self.env.getObs()
-        obs = [obs[agent].reshape(-1) for agent in self.env.agents]
-        o.append(obs)
-        o_next = o[1:]
-        s_next = s[1:]
-        o = o[:-1]
-        s = s[:-1]
-        # get avail_action for last obs，because target_q needs avail_action in training
-        avail_actions = []
-        for agent_id in range(self.n_agents):
-            avail_action = [1] * 5
-            avail_actions.append(avail_action)
-        avail_u.append(avail_actions)
-        avail_u_next = avail_u[1:]
-        avail_u = avail_u[:-1]
+            step += 1
 
         # if step < self.episode_limit，padding
-        for i in range(step, self.episode_limit):
-            o.append(np.zeros((self.n_agents, self.obs_shape)))
-            u.append(np.zeros([self.n_agents, 1]))
-            r.append([0.])
-            o_next.append(np.zeros((self.n_agents, self.obs_shape)))
-            u_onehot.append(np.zeros((self.n_agents, self.n_actions)))
-            avail_u.append(np.zeros((self.n_agents, self.n_actions)))
-            avail_u_next.append(np.zeros((self.n_agents, self.n_actions)))
-            padded.append([1.])
-            terminate.append([1.])
+        if episode:
+            for i in range(step, self.episode_limit):
+                episode['o'].append(np.zeros((self.n_agents, self.obs_shape)))
+                episode['u'].append(np.zeros([self.n_agents, 1]))
+                episode['r'].append([0.])
+                episode['o_next'].append(np.zeros((self.n_agents, self.obs_shape)))
+                episode['u_onehot'].append(np.zeros((self.n_agents, self.n_actions)))
+                episode['avail_u'].append(np.zeros((self.n_agents, self.n_actions)))
+                episode['avail_u_next'].append(np.zeros((self.n_agents, self.n_actions)))
+                episode['padded'].append([1.])
+                episode['terminated'].append([1.])
 
-        episode = dict(o=o.copy(),
-                       s=s.copy(),
-                       u=u.copy(),
-                       r=r.copy(),
-                       avail_u=avail_u.copy(),
-                       o_next=o_next.copy(),
-                       s_next=s_next.copy(),
-                       avail_u_next=avail_u_next.copy(),
-                       u_onehot=u_onehot.copy(),
-                       padded=padded.copy(),
-                       terminated=terminate.copy()
-                       )
         # add episode dim
         for key in episode.keys():
             episode[key] = np.array([episode[key]])
-        if not evaluate:
-            self.epsilon = epsilon
-        if evaluate and episode_num == self.args.evaluate_epoch - 1 and self.args.replay_dir != '':
-            # self.env.save_replay()
-            self.env.close()
+        self.epsilon = epsilon
         # jc加的,不成功按最大步长算
         if not success:
             step = self.episode_limit
-        return episode, episode_reward, step, constraints, success
+        return reward, step, constraints, success, episode

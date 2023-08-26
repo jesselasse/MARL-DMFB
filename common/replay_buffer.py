@@ -7,22 +7,22 @@ class ReplayBuffer:
         self.args = args
         self.n_actions = self.args.n_actions
         self.n_agents = self.args.n_agents
-        self.obs_shape = self.args.obs_shape
+        self.obs_shape = self.args.obs_shape[-1]
         self.size = self.args.buffer_size
         self.episode_limit = self.args.episode_limit
         # memory management
         self.current_idx = 0
         self.current_size = 0
         # create the buffer to store info
-        self.buffers = {'o': np.empty([self.size, self.episode_limit, self.n_agents, self.obs_shape]),
-                        'u': np.empty([self.size, self.episode_limit, self.n_agents, 1]),
+        self.buffers = {'o': np.empty([self.size, self.episode_limit, self.n_agents, self.obs_shape], dtype=np.int8),
+                        'u': np.empty([self.size, self.episode_limit, self.n_agents, 1], dtype=np.int8),
                         'r': np.empty([self.size, self.episode_limit, 1]),
-                        'o_next': np.empty([self.size, self.episode_limit, self.n_agents, self.obs_shape]),
-                        'avail_u': np.empty([self.size, self.episode_limit, self.n_agents, self.n_actions]),
-                        'avail_u_next': np.empty([self.size, self.episode_limit, self.n_agents, self.n_actions]),
-                        'u_onehot': np.empty([self.size, self.episode_limit, self.n_agents, self.n_actions]),
-                        'padded': np.empty([self.size, self.episode_limit, 1]),
-                        'terminated': np.empty([self.size, self.episode_limit, 1])
+                        'o_next': np.empty([self.size, self.episode_limit, self.n_agents, self.obs_shape], dtype=np.int8),
+                        'avail_u': np.empty([self.size, self.episode_limit, self.n_agents, self.n_actions], dtype=np.int8),
+                        'avail_u_next': np.empty([self.size, self.episode_limit, self.n_agents, self.n_actions], dtype=np.int8),
+                        'u_onehot': np.empty([self.size, self.episode_limit, self.n_agents, self.n_actions], dtype=np.int8),
+                        'padded': np.empty([self.size, self.episode_limit, 1], dtype=bool),
+                        'terminated': np.empty([self.size, self.episode_limit, 1], dtype=bool)
                         }
         if self.args.alg == 'maven':
             self.buffers['z'] = np.empty([self.size, self.args.noise_dim])
