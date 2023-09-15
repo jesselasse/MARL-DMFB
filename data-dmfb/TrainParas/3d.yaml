@@ -1,0 +1,29 @@
+# network parameters
+rnn_hidden_dim: 128
+qmix_hidden_dim: 32
+two_hyper_layers: True
+hyper_hidden_dim: 32
+lr: 3.0e-4
+
+---
+# parameters that only infect the training process
+n_episodes: 2 # the number of episodes before once training
+
+# epsilon greedy；训练时随机选择动作概率
+epsilon: 1
+min_epsilon: 0.05
+anneal_steps: 150000 # 10d 50000
+epsilon_anneal_scale: 'step'
+
+# the number of the training times in one epoch; 每收集n_episodes个 episodes后训练（更新参数）几次
+train_time: 1
+
+# experience replay
+batch_size: 128
+buffer_size: 5000
+
+# how often to update the target_net
+target_update_cycle: 200
+
+# prevent gradient explosion
+grad_norm_clip: 9
