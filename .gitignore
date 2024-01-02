@@ -3,3 +3,4 @@ printTrain.py
 multiTrain.py
 *.pkl
 printcompare.py
+observation.py
