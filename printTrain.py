@@ -1,4 +1,4 @@
-from common.arguments import get_train_args
+from common.arguments import common_args, process_evaluate_args, get_train_args
 import numpy as np
 from agent.agent import Agents
 from common.rollout import Evaluator
@@ -6,10 +6,18 @@ from train import Trainer
 
 
 def print_evaluate_for_drop_num():
-    args, ENV, Chip, Manager = get_train_args()
+    def extended_parser():
+        parser = common_args()
+        parser.add_argument('--ints', metavar='N', type=int, nargs='*', help='挑选哪一次或几次训练需要展示，默认就是文件夹里所有的模型')
+        args = parser.parse_args()
+        print(args.ints)
+        return process_evaluate_args(args)
+
+    args, ENV, Chip, Manager = extended_parser()
+    nargs = args.netdata
+    save_path = args.result_dir + '/' + args.alg + '/fov{}/task{}'.format(nargs[args.task].fov, args.task) + '/CL'
 
     def plts(data, dropnums):
-        save_path = args.result_dir + '/' + args.alg + '/fov{}/task{}'.format(args.fov, args.task) + '/CL'
         import matplotlib.pyplot as plt
         import matplotlib.pylab as pylab
         params = {'legend.fontsize': 'x-large',
@@ -34,40 +42,47 @@ def print_evaluate_for_drop_num():
         plt.close()
 
     # ----一次运行FF
-    assayManager = Manager(Chip(args.width, args.length), task=args.task, fov=[args.fov,args.fov], stall=args.stall)
+    assayManager = Manager(Chip(args.width, args.length), task=args.task, fov=[nargs[args.task].fov,nargs[args.task].fov],  oc=args.oc, stall=args.stall)
     env = ENV(assayManager)
     print(args)
     args.__dict__.update(env.get_env_info())
-    args.obs_shape = args.obs_shape[args.task]
     episode_rewards, episode_steps, episode_constraints, success_rate = {}, {}, {}, {}
     record = [episode_rewards, episode_steps, episode_constraints, success_rate]
-    dropnums= [3, 5, 7, 9, 10]
+    if args.task ==0:
+        dropnums= [3, 4, 5, 6, 8, 9, 10]
+        chip_sizes = [10, 10, 15, 16, 18, 19, 20]
+    if args.task==1:
+        dropnums = [3, 4, 5]
+        chip_sizes= [10, 10, 15]
     for drop_num in dropnums:
         for r in record:
             r[drop_num] = []
 
 
-    for load_name in range(args.n_steps // args.evaluate_cycle):
-        args.load_model_name = '{}_{}_'.format(args.ith_run, load_name)
-        print(args.load_model_name)
-        env.reset_chip(10, 10)
-        print('chip_size updated:', 10)
-        for drop_num in [3,5,7,9,10]:
-            a, b = divmod(drop_num, 5)
-            if b == 0:
-                w = 10 + a * 5
-                print('//drop_num:', drop_num,'chip_size updated:', w)
-                env.reset_chip(w, w)
-            evaluator = Evaluator(env, Agents(args, task=args.task), env.routing_manager.max_step)
+    for load_name in range(args.n_steps // args.evaluate_cycle+1):
+        if load_name == args.n_steps // args.evaluate_cycle:
+            nargs[args.task].load_model_name = '{}_'.format(args.ith_run)
+        else:
+            nargs[args.task].load_model_name = '{}_{}_'.format(args.ith_run, load_name)
+        print(nargs[args.task].load_model_name)
+        # print('chip_size updated:', 10)
+        evaluator = Evaluator(env, Agents(args, task=args.task))
+        args.episode_limit = env.routing_manager.max_step
+        for drop_num,size in zip(dropnums, chip_sizes):
+                # print('//drop_num:', drop_num,'chip_size updated:', w)
+            env.reset_chip(size, size)
+            args.episode_limit = env.routing_manager.max_step
             onerecord= evaluator.evaluate(
-                args.evaluate_task, drop_num)
-            print(drop_num, onerecord)
+                args.evaluate_task, drop_num, args.episode_limit)
+            # print(drop_num, onerecord)
             for i in range(4):
                 record[i][drop_num].append(onerecord[i])
+            print('drop_num:', drop_num, 'step:', onerecord[1], 'constraints:', onerecord[2], 'success:', onerecord[3])
 
 
 
         plts(record[-1], dropnums)
+        np.save(save_path + '/{}r,step,constraint,success_{}'.format(dropnums, args.ith_run), record)
 
 
 

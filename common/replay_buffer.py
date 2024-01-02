@@ -4,26 +4,26 @@ import torch
 
 
 class ReplayBuffer:
-    def __init__(self, args, n_agents=1):
+    def __init__(self, args, episode_limit):
         self.args = args
         self.n_actions = self.args.n_actions
-        self.obs_shape = self.args.obs_shape[-1]
-        self.size = self.args.buffer_size
-        self.episode_limit = self.args.episode_limit
+        self.obs_shape = self.args.obs_shape[args.task]
+        self.size = self.args.train.buffer_size
         # memory management
         self.buffers={}
+        self.episode_limit = episode_limit
         #self.buffers={n_agents: [self._init_buffer(n_agents), 0, 0]} #分别代表对应n_agents的buffer, current_size, current_idx
 
         # thread lock
         self.lock = threading.Lock()
 
-    def _init_buffer(self, n_agents):
-        # create the buffer to store info
-        buffer = {'o': torch.zeros((self.size, self.episode_limit+1, n_agents, self.obs_shape)), #(o要多一个，最后一步走完之后的状态）
+    def _init_buffer(self, n_agents,shape):
+        # create the buffer to store info；； ‘o-->'s_c' and 's_d' for chip state and droplets state
+        buffer = {#'s_c': torch.zeros((self.size,)+shape1), #(o要多一个，最后一步走完之后的状态）
+                  'o': torch.zeros((self.size, self.episode_limit+1, n_agents, shape)),
                         'u': torch.zeros(self.size, self.episode_limit, n_agents, 1, dtype=torch.int8),
                         'r': torch.zeros(self.size, self.episode_limit, 1),
                         'avail_u': torch.zeros(self.size, self.episode_limit, n_agents, self.n_actions, dtype=bool),
-                        'u_onehot': torch.zeros(self.size, self.episode_limit, n_agents, self.n_actions, dtype=bool),
                         'padded': torch.ones(self.size, self.episode_limit, 1, dtype=bool),
                         'terminated': torch.ones(self.size, self.episode_limit, 1, dtype=bool)
                         }
@@ -33,19 +33,16 @@ class ReplayBuffer:
 
     # store the episode
     def store_episode(self, episodes):
-        # (删去）episode的每一项都是一个(1, episode_len, n_agents, 具体维度)四维数组，下面要把所有episode的的obs拼在一起
-        # 例：episodes[0]['o']=(本身episode_len+1, n_agents,具体维度)每个不一样： episode[0]和episode[1]的episode_len不一样
-        # episode_batch = episodes[0]
-        # episodes.pop(0)
-        # for episode in episodes:
-        #     for key in episode_batch.keys():
-        #         episode_batch[key] = np.concatenate(
-        #             (episode_batch[key], episode[key]), axis=0)
-        # 判断episodes里有多少n_agents
         n_agents = episodes[0]['u'].shape[2]
-        # 如果n_agents个数不在self.buffers的key里，就新建一个key
+
+        # 如果n_agents个数不在self.buffers的key里，就新建一个key,obs尺寸就在这里初始化。
         if n_agents not in self.buffers.keys():
-            self.buffers[n_agents] = [self._init_buffer(n_agents),0,0]
+            # # if env changes with time
+            # shape1 = episodes[0]['s_c'].shape[1:]
+            # shape2 = episodes[0]['s_d'].shape[-1]
+            # if shape1[0]==episodes[0]['s_d'].shape[1]:
+            #     shape1 = (self.self.episode_limit+1, )+shape1[1:]
+            self.buffers[n_agents] = [self._init_buffer(n_agents, episodes[0]['o'].shape[-1]),0,0]
         # 如果self.buffers超过2个就把第一个删了
         if len(self.buffers) > 2:
             self.buffers.pop(list(self.buffers.keys())[0])
@@ -61,13 +58,14 @@ class ReplayBuffer:
                 idx=idxs[i]
                 episode_len = episodes[i]['u'].shape[1]
                 # store the informations
+                # try:
+                #     buffer['s_c'][idx][:episode_len + 1, :, :] = episodes[i]['s_c']
+                # except:
+                #     buffer['s_c'][idx] = episodes[i]['s_c']
                 buffer['o'][idx][:episode_len+1,:,:] = episodes[i]['o']
                 buffer['u'][idx][:episode_len,:,:] = episodes[i]['u']
                 buffer['r'][idx][:episode_len,:] = episodes[i]['r']
-                # buffer['o_next'][idx] = episode_batch['o_next']
                 buffer['avail_u'][idx][:episode_len,:,:] = episodes[i]['avail_u']
-                # buffer['avail_u_next'][idxs] = episode_batch['avail_u_next']
-                buffer['u_onehot'][idx][:episode_len,:,:] = episodes[i]['u_onehot']
                 buffer['padded'][idx][:episode_len,:] = episodes[i]['padded']
                 buffer['terminated'][idx][:episode_len,:] = episodes[i]['terminated']
                 if self.args.alg == 'maven':
@@ -139,3 +137,5 @@ class ReplayBuffer:
         if inc == 1:
             idx = idx[0]
         return idx, current_size, current_idx
+
+

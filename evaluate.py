@@ -11,12 +11,12 @@ if __name__ == '__main__':
     for i in range(1):
         # ----一次运行FF
         start=time.time()
-        assayManager = Manager(Chip(args.width, args.length), task=args.task, fov=[args.fov, args.fov], stall=args.stall)
+        assayManager = Manager(Chip(args.width, args.length), task=args.task, fov=[args.netdata[args.task].fov], oc=args.oc, stall=args.stall)
         env = ENV(assayManager, show=args.show, savemp4=args.show_save)
         args.__dict__.update(env.get_env_info())
-        args.obs_shape = args.obs_shape[args.task]
-        evaluator = Evaluator(env, Agents(args, task=args.task), args.episode_limit)
-        average_episode_rewards, average_episode_steps, _, success_rate = evaluator.evaluate(args.evaluate_task, args.drop_num)
+        args.obs_shape = args.obs_shape
+        evaluator = Evaluator(env, Agents(args, task=args.task))
+        average_episode_rewards, average_episode_steps, constraint, success_rate = evaluator.evaluate(args.evaluate_task, args.drop_num, args.episode_limit)
         Psuccess.append(success_rate)
         Tavg.append(average_episode_steps)
         print('time:',time.time()-start)
@@ -24,6 +24,8 @@ if __name__ == '__main__':
             args.alg, average_episode_rewards))
         print('The average total_steps is: {}'.format(
             average_episode_steps))
+        print('The average constraint is: {}'.format(
+            constraint))
         print('The successful rate is: {}'.format(success_rate))
     # ----
     # if args.evaluate:

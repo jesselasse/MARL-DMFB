@@ -1,4 +1,5 @@
 import argparse
+from argparse import Namespace
 import yaml
 from common.config import config
 
@@ -19,8 +20,6 @@ def common_args():
     #                     help='the number of episodes before once training')
     parser.add_argument('--cuda', default=True, action='store_false',
                         help='whether to use the GPU')
-    parser.add_argument('--optimizer', type=str,
-                        default="ADAM", help='optimizer')
     parser.add_argument('--evaluate_task', type=int, default=100,
                         help='evaluate the model: the average performance over #evaluate_task random generated routing tasks')
     parser.add_argument('--model_dir', type=str,
@@ -38,11 +37,13 @@ def common_args():
                         help='whether the droplet can move or not after reach the target')
     parser.add_argument('--drop_num', '-d', type=int, default=4,
                         help='the number of droplet')
+    parser.add_argument('--oc', type=int, default=None,
+                        help='which obs definition do we use')
     parser.add_argument('--max_n_drop', '-m', type=int, default=None,
                         help='the maximum number of droplet while training if we use curriculum learning')
     parser.add_argument('--block_num', type=int, default=0,
                         help='the number of block')
-    parser.add_argument('--net', type=str, default='crnn',
+    parser.add_argument('--net', type=str, default=None, choices=['crnn', 'FC4','CRatt'],
                         help='the architecture of policy')
     parser.add_argument('--width', '-w', '--chip_size', help='Width of the biochip', type=int, default=None)
     parser.add_argument('--length', '-l', help='Length of the biochip', type=int, default=None)
@@ -71,7 +72,17 @@ def set_default(args):
                 args.length = 60
         elif args.length is None:
             args.length = args.width
-
+    obs_set={'crnn':5, 'FC4':0, 'CRatt':1}
+    # 允許訓練時在外面指定？
+    # if args.net is not None:
+    #     args.netdata[args.task].net = args.net
+    if args.oc is None:
+        args.oc=5
+    # if args.oc is not None:
+    #     args.netdata[args.task].oc = args.oc
+    if args.load_model_name:
+        args.load_model=True
+        args.netdata[args.task].load_model_name=args.load_model_name
     return args
 
 def train_args(parser):
@@ -87,28 +98,36 @@ def train_args(parser):
 
     return parser
 
+def process_train_args(args, pri=True):
+    args = set_default(args)
+    ENV, Chip, Manager=config(args.name, args.version)
+    if args.task == 0:
+        filename ='TrainParas/Task1.yaml'
+    elif args.task == 1:
+        filename = 'TrainParas/Task2.yaml'
+    else:
+        filename = 'TrainParas/4d.yaml'
+    with open(filename) as f:
+        netdata, traindata = yaml.safe_load_all(f.read())
+    args.netdata, args.train={},{}
+    args.netdata[args.task] = Namespace(**netdata)
+    args.train=Namespace(**traindata)
+    args.train.gamma=args.netdata[args.task].gamma
+    # args.max_n_agents=args.drop_num+1
+    args.n_steps=args.n_steps*100000
+    if pri:
+        # print('drop number:', args.drop_num)
+        print('chip size:', args.width, '*', args.length)
+        print('FOV size:', args.netdata[args.task].fov)
+        print('observation id:', args.oc)
+    return args, ENV, Chip, Manager
+
+
 def get_train_args(recieve=None, pri=True):
     parser = common_args()
     parser = train_args(parser)
     args = parser.parse_args(recieve)
-    args = set_default(args)
-    ENV, Chip, Manager=config(args.name, args.version)
-    if args.task == 0:
-        filename ='TrainParas/4d.yaml'.format(args.drop_num)
-    else:
-        # filename = 'TrainParas/Task1.yaml'
-        filename = 'TrainParas/4d.yaml'
-    with open(filename) as f:
-        netdata, data = yaml.safe_load_all(f.read())
-    args.__dict__.update(netdata)
-    args.__dict__.update(data)
-    # args.max_n_agents=args.drop_num+1
-    args.n_steps=args.n_steps*100000
-    if pri:
-        print('drop number:', args.drop_num)
-        print('chip size:', args.width, '*', args.length)
-        print('FOV size:', args.fov)
-    return args, ENV, Chip, Manager
+    return process_train_args(args, pri)
 
 def evaluate_args(parser):
     parser.add_argument('--show', default=False, action='store_true',
@@ -121,34 +140,41 @@ def evaluate_args(parser):
     parser.set_defaults(load_model=True)
     return parser
 
+def process_evaluate_args(args):
+    args = set_default(args)
+    ENV, Chip, Manager= config(args.name, args.version)
+    if args.task == 0:
+        filename ='TrainParas/Task1.yaml'
+    else:
+        # filename = 'TrainParas/Task1.yaml'
+        filename = 'TrainParas/Task2.yaml'
+    with open(filename) as f:
+        netdata, data = yaml.safe_load_all(f.read())
+    args.netdata = {}
+    args.netdata[args.task] = Namespace(**netdata)
+    args.netdata[args.task].load_model_name = args.load_model_name
+
+
+    return args, ENV, Chip, Manager
+
 def get_evaluate_args():
     parser = common_args()
     parser = evaluate_args(parser)
     args = parser.parse_args()
-    args = set_default(args)
-    ENV, Chip, Manager = config(args.name, args.version)
-    if args.task == 0:
-        filename ='TrainParas/4d.yaml'
-    else:
-        # filename = 'TrainParas/Task1.yaml'
-        filename = 'TrainParas/4d.yaml'
-    with open(filename) as f:
-        netdata, data = yaml.safe_load_all(f.read())
-    args.__dict__.update(netdata)
-    return args, ENV, Chip, Manager
+    return process_evaluate_args(args)
 
-def process_assay_args():
-    parser = common_args()
-    parser = evaluate_args(parser)
-    args = parser.parse_args()
+def process_assay_args(args):
     args = set_default(args)
     ENV, Chip, Manager = config(args.name, args.version, train=False)
-    net_data=[]
-    for filename in ['TrainParas/4d.yaml','TrainParas/4d.yaml']:
+    args.netdata = []
+    for filename in ['TrainParas/Task1.yaml', 'TrainParas/Task2.yaml']:
         with open(filename) as f:
             nd, _ = yaml.safe_load_all(f.read())
-            net_data.append(nd)
-    return args, ENV, Chip, Manager, net_data
+            args.netdata.append(Namespace(**nd))
+    if not hasattr(args.netdata[0], 'load_model_name'):
+        args.netdata[0].load_model_name=args.load_model_name
+        args.netdata[1].load_model_name=args.load_model_name2
+    return args, ENV, Chip, Manager
 
 
 if __name__ == '__main__':

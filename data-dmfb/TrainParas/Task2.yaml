@@ -3,7 +3,11 @@ rnn_hidden_dim: 128
 qmix_hidden_dim: 32
 two_hyper_layers: True
 hyper_hidden_dim: 32
-lr: 5.0e-4
+gamma: 0.99 # discount factor
+last_action: True
+reuse_network: True
+fov: 9
+net: 'crnn'
 
 ---
 # parameters that only infect the training process
@@ -17,6 +21,7 @@ epsilon_anneal_scale: 'step'
 
 # the number of the training times in one epoch; 每收集n_episodes个 episodes后训练（更新参数）几次
 train_time: 1
+lr: 3.0e-4
 
 # experience replay
 batch_size: 128
@@ -27,3 +32,6 @@ target_update_cycle: 200
 
 # prevent gradient explosion
 grad_norm_clip: 9
+
+#optimizer
+optimizer: 'ADAM'

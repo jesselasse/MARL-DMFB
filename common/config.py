@@ -3,6 +3,8 @@ import os
 def config(name, version = None, train=True):
     if name == 'dmfb':
         os.chdir('data-dmfb/')
+        from env.DMFB.observation import state2obs
+        o_def=state2obs
         if version == '0.1':
             from env.DMFB.dmfb import DMFBenv_v0_1, Chip
             return DMFBenv_v0_1, Chip

@@ -63,6 +63,7 @@ class Droplet:
         self.opid = opid
         self.hidden_state = None
         self.last_action = None
+        self.difficulty=0
 
     def get_position(self):
         return (self.pos[0], self.pos[1])
@@ -131,6 +132,7 @@ class Droplet_T1(Droplet):
         # start, destination是列表, destination 可以是元组： out or non-config
         super().__init__(start, opid)
         self.des = destination
+        self.difficulty = 0.1*self.distance
         self.partner = partner
 
     def __repr__(self):
@@ -198,6 +200,7 @@ class Droplet_T1(Droplet):
 class Droplet_T2(Droplet):
     type = 1
     d = ['+x', '-x', '-y', '+y']
+    fullmix = 1
 
     def __init__(self, coordinate, opid=0, mix_update=(0.0029, 0.0058, 0.001, -0.005)):
         # coordinat_x, coordinate_y: int
@@ -224,7 +227,7 @@ class Droplet_T2(Droplet):
 
     @property
     def finished(self):
-        return self.mix_percent >= 1
+        return self.mix_percent >= self.fullmix
 
     def try2move(self, direction):
         if direction == 0:
@@ -304,8 +307,8 @@ class Droplet_T2(Droplet):
     def headto(self):
         return self.last_actions[0]
 
-    def direct_vector(self):
-        return super().getdir(self.last_action)
+    def direct_vector(self, *args):
+        return super().getdir(self.last_actions[0])
 
 
 class Droplet_store(Droplet):
@@ -315,12 +318,24 @@ class Droplet_store(Droplet):
         # start, destination是列表, destination 可以是元组： out or non-config
         super().__init__(start, opid)
         self.ref = 0
-        self.finished = True
+        self.duration = None
+        self.time = 0
 
     def move_reward(self, action):
         super().move(action)
+        self.time += 1
         # stall in final position
         return 0
+
+    def direct_vector(self, *args):
+        return (0,0)
+
+    @property
+    def finished(self):
+        if self.duration:
+            return self.time >= self.duration
+        return False
+
 
 
 class Droplets(list):
@@ -330,9 +345,10 @@ class Droplets(list):
     def append(self, drop) -> None:
         super().append(drop)
 
-    def add(self, task, *args, opid=0):
+    def add(self, task, *args, opid=0, difficulty=0):
         Drop = [Droplet_T1, Droplet_T2, Droplet_store]
         d = Drop[task](*args, opid=opid)
+        d.difficulty+=difficulty
         super().append(d)
         return d
 
@@ -354,6 +370,7 @@ class Chip:
         self.m_health = np.ones((w, l))
         self.m_usage = np.zeros((w, l))
         self.b_degrade = b_degrade
+        self.chip_changes = b_degrade
         self.m_degrade = self._random_health_statue()
         self.per_degrade = per_degrade
         self.generate_random_chip(n_block=n_block)
@@ -423,7 +440,7 @@ class Chip:
             self.m_usage[pos] += 1
         else:
             for p in pos:
-                self.m_usage[p] += 1
+                self.m_usage[tuple(p)] += 1
 
     def updateHealth(self):
         index = self.m_usage > 50.0  # degrade here
@@ -450,3 +467,12 @@ def compute_norm_squared_EDM(x):
     G = np.dot(x.T, x)
     H = np.tile(np.diag(G), (n, 1))
     return H + H.T - 2 * G
+
+def euclidean_distance_matrix(points):
+    # 计算点与点之间的差值
+    point_diff = points[:, np.newaxis] - points
+
+    # 计算差值的平方并按行求和
+    distance_matrix = np.sqrt(np.sum(point_diff ** 2, axis=2))
+
+    return distance_matrix

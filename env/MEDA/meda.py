@@ -717,20 +717,15 @@ class Viewer:
         w = m_health.shape[0]
         for x in range(l):
             for y in range(w):
-                cellarr = self.drawcell(self.u_size - 2 * m, m_health[y][x])
+                cellarr = self.drawcell(self.u_size - 2 * m, 100 + int(155 * m_health[y, x]))
                 cell = pygame.image.frombuffer(cellarr.flatten(), (self.u_size - 2 * m, self.u_size - 2 * m),
                                                'RGB').convert()
                 background.blit(cell, (x * self.u_size + m, y * self.u_size + m))  # 普通格子
 
         self.background = background
 
-    def drawcell(self, u_size, m_health):
-        H = 100 + int(155 * m_health)
-        # if(x==3):
-        #    H=100
-        # if(x==5):
-        #    H=180
-        cell = np.ones((u_size, u_size, 3), dtype='uint8') * H
+    def drawcell(self, u_size, dgrey):
+        cell = np.ones((u_size, u_size, 3), dtype='uint8') * dgrey
         cell[:, [0, -2, -1], :] = 0
         cell[[0, -2, -1], :, :] = 0
         return cell

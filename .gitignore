@@ -1,1 +1,5 @@
 *.avi
+printTrain.py
+multiTrain.py
+*.pkl
+printcompare.py
